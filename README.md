@@ -88,3 +88,50 @@ The application includes comprehensive error handling for:
 ## License
 
 MIT License
+
+## Future Plans
+
+The following improvements are planned for future releases:
+
+### 1. Environment Configuration
+- Move all sensitive configuration to environment variables
+- Create `.env.example` file with required variables
+- Update configuration management for better security
+
+### 2. Dependencies Management
+- Pin all package versions in requirements.txt
+- Consider migration to poetry for better dependency management
+- Document system dependencies (fonts, etc.)
+
+### 3. Production Server Setup
+- Add Gunicorn/uWSGI as WSGI server
+- Create proper wsgi.py entry point
+- Add server configuration files
+
+### 4. Docker Support
+- Create Dockerfile for containerization
+- Add docker-compose.yml for easier deployment
+- Include necessary font files for PDF generation
+
+### 5. Error Handling & Logging
+- Implement comprehensive error handling
+- Set up structured logging
+- Add request/response validation
+
+### 6. Documentation
+- Add API documentation
+- Expand setup/configuration guide
+- Include deployment instructions
+
+### 7. Security Measures
+- Add rate limiting
+- Implement CORS properly
+- Add request validation
+- Set up HTTPS configuration
+
+### 8. Monitoring & Health Checks
+- Add health check endpoints
+- Set up basic monitoring
+- Add performance metrics
+
+These improvements will make the application more production-ready and easier to deploy and maintain.
