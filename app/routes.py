@@ -5,6 +5,7 @@ import logging
 from markdown2 import markdown
 import json
 import traceback
+import re
 from requests.exceptions import RequestException
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
@@ -53,6 +54,47 @@ def get_safe_filename(language, format_type):
     
     return filename
 
+def process_markdown_text(text, style):
+    """Process markdown text to handle bold, italic, and code formatting"""
+    # Handle bold text
+    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+    # Handle italic text
+    text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', text)
+    # Handle inline code
+    text = re.sub(r'`(.+?)`', r'<code>\1</code>', text)
+    return text
+
+def is_header_underline(line):
+    """Check if a line is a markdown header underline (=== or ---)"""
+    return bool(re.match(r'^[=\-]+$', line.strip()))
+
+def process_list_item(line):
+    """Process a list item to determine its level and clean the text"""
+    original_line = line
+    line = line.rstrip()
+    indent = len(line) - len(line.lstrip())
+    level = indent // 2
+    
+    # Clean up the text
+    text = line.lstrip()
+    
+    # Determine the bullet type
+    bullet = '•'
+    if text.startswith('+ '):
+        bullet = '+'
+        text = text[2:]
+    elif text.startswith('- '):
+        text = text[2:]
+    elif text.startswith('* '):
+        text = text[2:]
+    else:
+        for i in range(1, 10):
+            if text.startswith(f'{i}. '):
+                text = text[len(f'{i}. '):]
+                break
+    
+    return level, bullet, text.strip()
+
 def create_pdf_style(language):
     """Create PDF styles with appropriate font for the language"""
     styles = getSampleStyleSheet()
@@ -68,42 +110,77 @@ def create_pdf_style(language):
         'CustomTitle',
         parent=styles['Heading1'],
         fontSize=24,
-        spaceAfter=30,
+        spaceAfter=20,
         alignment=1,  # Center alignment
-        fontName=font_name
+        fontName=font_name,
+        leading=32,  # Add more space between lines
+        textColor=colors.HexColor('#2C3E50'),  # Dark blue-grey color
+        bold=True
     )
     
     normal_style = ParagraphStyle(
         'CustomNormal',
         parent=styles['Normal'],
-        fontSize=12,
-        fontName=font_name
+        fontSize=11,
+        fontName=font_name,
+        leading=16,  # Increase line spacing
+        spaceBefore=6,
+        spaceAfter=6,
+        allowWidows=0,
+        allowOrphans=0
     )
     
     heading_styles = {}
+    base_sizes = {1: 18, 2: 16, 3: 14}  # Adjusted heading sizes
+    
     for i in range(1, 4):
         heading_styles[i] = ParagraphStyle(
             f'CustomHeading{i}',
             parent=styles[f'Heading{i}'],
-            fontSize=20 - (i * 2),
-            spaceBefore=20,
-            spaceAfter=10,
-            fontName=font_name
+            fontSize=base_sizes[i],
+            spaceBefore=16 if i == 1 else 12,
+            spaceAfter=8,
+            fontName=font_name,
+            leading=base_sizes[i] + 8,  # Dynamic leading based on font size
+            textColor=colors.HexColor('#2C3E50'),  # Dark blue-grey color
+            bold=True,
+            allowWidows=0,
+            allowOrphans=0
         )
+    
+    bullet_style = ParagraphStyle(
+        'Bullet',
+        parent=normal_style,
+        fontSize=11,
+        fontName=font_name,
+        leading=16,
+        leftIndent=20,
+        firstLineIndent=0,
+        spaceBefore=3,
+        spaceAfter=3,
+        bulletIndent=10,
+        allowWidows=0,
+        allowOrphans=0
+    )
     
     code_style = ParagraphStyle(
         'Code',
         parent=normal_style,
         fontName='Courier',
-        fontSize=8,
+        fontSize=9,
         leftIndent=36,
-        textColor=colors.black,
-        backColor=colors.lightgrey,
-        spaceBefore=10,
-        spaceAfter=10
+        rightIndent=36,
+        textColor=colors.HexColor('#2F3129'),  # Dark grey for better readability
+        backColor=colors.HexColor('#F8F8F8'),  # Light grey background
+        spaceBefore=12,
+        spaceAfter=12,
+        leading=14,  # Tighter line spacing for code
+        face='monospace',
+        allowWidows=0,
+        allowOrphans=0
     )
     
-    return title_style, normal_style, heading_styles, code_style
+    return title_style, normal_style, heading_styles, bullet_style, code_style
 
 @main.route('/')
 def index():
@@ -192,55 +269,143 @@ def export_analysis():
             return jsonify({
                 'content': analysis, 
                 'format': 'md',
-                'filename': get_safe_filename(language, 'md')
+                'filename': f"{FILE_NAMES[language]}.md"
             })
         elif format_type == 'pdf':
             # Create a PDF in memory
             pdf_buffer = io.BytesIO()
             
-            # Create the PDF document
+            # Create the PDF document with A4 size and margins
             doc = SimpleDocTemplate(
                 pdf_buffer,
                 pagesize=letter,
-                rightMargin=72,
-                leftMargin=72,
-                topMargin=72,
-                bottomMargin=72
+                rightMargin=54,  # Adjusted margins
+                leftMargin=54,
+                topMargin=54,
+                bottomMargin=54,
+                title=TITLES.get(language, TITLES['en'])  # Add PDF title metadata
             )
             
             # Get styles with appropriate font
-            title_style, normal_style, heading_styles, code_style = create_pdf_style(language)
+            title_style, normal_style, heading_styles, bullet_style, code_style = create_pdf_style(language)
             
             # Convert markdown to a format ReportLab can handle
             story = []
             
             # Add title in the correct language
-            story.append(Paragraph(TITLES.get(language, TITLES['en']), title_style))
-            story.append(Spacer(1, 12))
+            title_text = process_markdown_text(TITLES.get(language, TITLES['en']), title_style)
+            story.append(Paragraph(title_text, title_style))
+            story.append(Spacer(1, 24))  # More space after title
             
-            # Split content into paragraphs and add them
-            paragraphs = analysis.split('\n\n')
-            for para in paragraphs:
-                if para.strip():
-                    # Handle markdown headers
-                    if para.startswith('#'):
-                        level = len(para.split()[0])  # Count the number of #
-                        text = para.lstrip('#').strip()
-                        style = heading_styles.get(min(level, 3))
+            # Process the content line by line
+            lines = analysis.split('\n')
+            in_code_block = False
+            code_content = []
+            current_paragraph = []
+            
+            i = 0
+            while i < len(lines):
+                line = lines[i].rstrip()
+                
+                # Skip empty lines but add paragraph if we have content
+                if not line:
+                    if current_paragraph:
+                        text = ' '.join(current_paragraph)
+                        text = process_markdown_text(text, normal_style)
+                        story.append(Paragraph(text, normal_style))
+                        story.append(Spacer(1, 4))
+                        current_paragraph = []
+                    i += 1
+                    continue
+                
+                # Handle code blocks
+                if line.startswith('```') or line.endswith('```'):
+                    if line.startswith('```'):
+                        in_code_block = True
+                        code_content = []
                     else:
-                        text = para.strip()
-                        style = normal_style
-                        
-                    # Handle markdown code blocks
-                    if text.startswith('```'):
-                        text = text.strip('`').strip()
-                        style = code_style
+                        in_code_block = False
+                        if code_content:
+                            story.append(Paragraph('\n'.join(code_content), code_style))
+                        code_content = []
+                    i += 1
+                    continue
+                
+                if in_code_block:
+                    code_content.append(line)
+                    i += 1
+                    continue
+                
+                # Handle headers
+                if line.startswith('#'):
+                    # Add any pending paragraph
+                    if current_paragraph:
+                        text = ' '.join(current_paragraph)
+                        text = process_markdown_text(text, normal_style)
+                        story.append(Paragraph(text, normal_style))
+                        current_paragraph = []
                     
-                    # Only add non-empty paragraphs
-                    if text.strip():
-                        story.append(Paragraph(text, style))
-                        if style != code_style:
-                            story.append(Spacer(1, 6))
+                    level = len(line.split()[0])  # Count the number of #
+                    text = line.lstrip('#').strip()
+                    text = process_markdown_text(text, heading_styles[min(level, 3)])
+                    style = heading_styles.get(min(level, 3))
+                    story.append(Spacer(1, 8))
+                    story.append(Paragraph(text, style))
+                    story.append(Spacer(1, 4))
+                    i += 1
+                # Handle alternate header style (=== or ---)
+                elif i + 1 < len(lines) and is_header_underline(lines[i + 1]):
+                    # Add any pending paragraph
+                    if current_paragraph:
+                        text = ' '.join(current_paragraph)
+                        text = process_markdown_text(text, normal_style)
+                        story.append(Paragraph(text, normal_style))
+                        current_paragraph = []
+                    
+                    # Determine header level (=== is h1, --- is h2)
+                    level = 1 if lines[i + 1].strip()[0] == '=' else 2
+                    text = line.strip()
+                    text = process_markdown_text(text, heading_styles[level])
+                    style = heading_styles.get(level)
+                    story.append(Spacer(1, 8))
+                    story.append(Paragraph(text, style))
+                    story.append(Spacer(1, 4))
+                    i += 2  # Skip both the header text and the underline
+                    continue
+                
+                # Handle list items
+                elif line.lstrip().startswith(('+ ', '- ', '* ', '1. ', '2. ', '3. ', '4. ', '5. ')):
+                    # Add any pending paragraph
+                    if current_paragraph:
+                        text = ' '.join(current_paragraph)
+                        text = process_markdown_text(text, normal_style)
+                        story.append(Paragraph(text, normal_style))
+                        current_paragraph = []
+                    
+                    level, bullet, text = process_list_item(line)
+                    
+                    # Create bullet style with proper indentation
+                    current_bullet_style = ParagraphStyle(
+                        f'Bullet{level}',
+                        parent=bullet_style,
+                        leftIndent=20 + (20 * level),
+                        bulletIndent=10 + (20 * level)
+                    )
+                    
+                    text = process_markdown_text(text, current_bullet_style)
+                    story.append(Paragraph(f'{bullet} {text}', current_bullet_style))
+                    i += 1
+                
+                # Handle normal paragraphs
+                else:
+                    current_paragraph.append(line)
+                    i += 1
+            
+            # Add any remaining paragraph
+            if current_paragraph:
+                text = ' '.join(current_paragraph)
+                text = process_markdown_text(text, normal_style)
+                story.append(Paragraph(text, normal_style))
             
             # Build the PDF
             doc.build(story)
