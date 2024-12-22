@@ -8,3 +8,4 @@ weasyprint==60.1
 python-frontmatter==1.0.0
 tenacity==8.2.3
 tqdm==4.66.1
+chinese-fonts-setup==0.9.6

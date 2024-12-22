@@ -12,11 +12,16 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.units import inch
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 import tempfile
 from pathlib import Path
 import os
 import io
 import urllib.parse
+
+# Register Chinese font
+pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
 
 main = Blueprint('main', __name__)
 logger = logging.getLogger(__name__)
@@ -34,13 +39,71 @@ FILE_NAMES = {
     'es': 'analisis_repositorio',
     'fr': 'analyse_depot',
     'de': 'repository_analyse',
-    'zh': 'code_analysis_cn'  # Using more descriptive ASCII name for Chinese
+    'zh': '代码仓库分析'
 }
 
 def get_safe_filename(language, format_type):
     """Get a safe filename for the given language."""
     base_name = FILE_NAMES[language]
-    return f"{base_name}.{format_type}"
+    filename = f"{base_name}.{format_type}"
+    
+    # URL encode the filename for safety while preserving Chinese characters
+    if language == 'zh':
+        filename = urllib.parse.quote(filename)
+    
+    return filename
+
+def create_pdf_style(language):
+    """Create PDF styles with appropriate font for the language"""
+    styles = getSampleStyleSheet()
+    
+    # Use Chinese font for Chinese language
+    if language == 'zh':
+        font_name = 'STSong-Light'
+    else:
+        font_name = 'Helvetica'
+    
+    # Create custom styles with the appropriate font
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        spaceAfter=30,
+        alignment=1,  # Center alignment
+        fontName=font_name
+    )
+    
+    normal_style = ParagraphStyle(
+        'CustomNormal',
+        parent=styles['Normal'],
+        fontSize=12,
+        fontName=font_name
+    )
+    
+    heading_styles = {}
+    for i in range(1, 4):
+        heading_styles[i] = ParagraphStyle(
+            f'CustomHeading{i}',
+            parent=styles[f'Heading{i}'],
+            fontSize=20 - (i * 2),
+            spaceBefore=20,
+            spaceAfter=10,
+            fontName=font_name
+        )
+    
+    code_style = ParagraphStyle(
+        'Code',
+        parent=normal_style,
+        fontName='Courier',
+        fontSize=8,
+        leftIndent=36,
+        textColor=colors.black,
+        backColor=colors.lightgrey,
+        spaceBefore=10,
+        spaceAfter=10
+    )
+    
+    return title_style, normal_style, heading_styles, code_style
 
 @main.route('/')
 def index():
@@ -145,16 +208,8 @@ def export_analysis():
                 bottomMargin=72
             )
             
-            # Create styles
-            styles = getSampleStyleSheet()
-            title_style = ParagraphStyle(
-                'CustomTitle',
-                parent=styles['Heading1'],
-                fontSize=24,
-                spaceAfter=30,
-                alignment=1  # Center alignment
-            )
-            normal_style = styles['Normal']
+            # Get styles with appropriate font
+            title_style, normal_style, heading_styles, code_style = create_pdf_style(language)
             
             # Convert markdown to a format ReportLab can handle
             story = []
@@ -171,13 +226,7 @@ def export_analysis():
                     if para.startswith('#'):
                         level = len(para.split()[0])  # Count the number of #
                         text = para.lstrip('#').strip()
-                        style = ParagraphStyle(
-                            f'Heading{level}',
-                            parent=styles[f'Heading{min(level, 3)}'],
-                            fontSize=20 - (level * 2),
-                            spaceBefore=20,
-                            spaceAfter=10
-                        )
+                        style = heading_styles.get(min(level, 3))
                     else:
                         text = para.strip()
                         style = normal_style
@@ -185,22 +234,12 @@ def export_analysis():
                     # Handle markdown code blocks
                     if text.startswith('```'):
                         text = text.strip('`').strip()
-                        style = ParagraphStyle(
-                            'Code',
-                            parent=normal_style,
-                            fontName='Courier',
-                            fontSize=8,
-                            leftIndent=36,
-                            textColor=colors.black,
-                            backColor=colors.lightgrey,
-                            spaceBefore=10,
-                            spaceAfter=10
-                        )
+                        style = code_style
                     
                     # Only add non-empty paragraphs
                     if text.strip():
                         story.append(Paragraph(text, style))
-                        if not isinstance(style, ParagraphStyle) or style.name != 'Code':
+                        if style != code_style:
                             story.append(Spacer(1, 6))
             
             # Build the PDF
