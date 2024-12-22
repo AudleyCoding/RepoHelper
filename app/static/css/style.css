@@ -1,0 +1,52 @@
+/* Additional custom styles */
+.prose {
+    color: #374151;
+    max-width: 65ch;
+    line-height: 1.75;
+}
+
+.prose h1, .prose h2, .prose h3 {
+    color: #1F2937;
+    font-weight: 600;
+    margin-top: 2em;
+    margin-bottom: 1em;
+}
+
+.prose p {
+    margin-top: 1.25em;
+    margin-bottom: 1.25em;
+}
+
+.prose ul {
+    margin-top: 1.25em;
+    margin-bottom: 1.25em;
+    padding-left: 1.625em;
+    list-style-type: disc;
+}
+
+.prose code {
+    color: #1F2937;
+    background-color: #F3F4F6;
+    padding: 0.2em 0.4em;
+    border-radius: 0.25em;
+    font-size: 0.875em;
+}
+
+.prose pre {
+    background-color: #F3F4F6;
+    padding: 1em;
+    border-radius: 0.375em;
+    overflow-x: auto;
+    margin-top: 1.25em;
+    margin-bottom: 1.25em;
+}
+
+/* Progress bar animation */
+@keyframes progress {
+    0% { width: 0%; }
+    100% { width: 100%; }
+}
+
+.progress-bar {
+    animation: progress 2s ease-in-out infinite;
+}
